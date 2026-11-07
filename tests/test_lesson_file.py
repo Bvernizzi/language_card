@@ -40,3 +40,16 @@ def test_duplicate_sentence_is_rejected():
 def test_invalid_source_kind():
     with pytest.raises(LessonFileError, match="kind"):
         lesson_from_dict({"date": "2026-11-06", "sources": [{"key": "a", "kind": "podcast", "title": "x"}]})
+
+
+def test_learner_file_default_and_row_override():
+    lesson = lesson_from_dict({
+        "date": "2026-11-06",
+        "learner": "alice",
+        "sentences": [{"it": "Ciao"}, {"it": "Buongiorno", "learner": None}],  # null = shared
+        "vocab": [{"it": "finestra", "pt": "janela", "learner": "bob"}],
+        "verbs": [{"infinitive": "bere", "conjugations": {"presente": {"io": "bevo"}}}],
+    })
+    assert [s.learner for s in lesson.sentences] == ["alice", None]
+    assert lesson.vocab[0].learner == "bob"
+    assert lesson.conjugations[0].learner == "alice"

@@ -30,6 +30,7 @@ class Sentence:
     text_pt: str | None
     tags: list[str]
     source_key: str | None = None
+    learner: str | None = None
 
 
 @dataclass
@@ -40,6 +41,7 @@ class Vocab:
     gender: str | None = None
     example_it: str | None = None
     source_key: str | None = None
+    learner: str | None = None
 
 
 @dataclass
@@ -49,6 +51,7 @@ class Conjugation:
     person: str
     form: str
     source_key: str | None = None
+    learner: str | None = None
 
 
 @dataclass
@@ -56,6 +59,7 @@ class Verb:
     infinitive: str
     translation: str | None
     source_key: str | None = None
+    learner: str | None = None
 
 
 @dataclass
@@ -75,6 +79,7 @@ class Lesson:
     verbs: list[Verb] = field(default_factory=list)
     conjugations: list[Conjugation] = field(default_factory=list)
     origin: str | None = None
+    learner: str | None = None  # file default; each row keeps its own value
 
     @property
     def label(self) -> str:
@@ -110,7 +115,14 @@ def _as_list(value) -> list:
     return value if isinstance(value, list) else [value]
 
 
-def _sentence(item: dict, where: str, source_key: str | None) -> Sentence:
+def _learner(item, default: str | None) -> str | None:
+    """Row value if the key is present (an explicit empty value = shared), else the file default."""
+    if isinstance(item, dict) and "learner" in item:
+        return _str(item["learner"])
+    return default
+
+
+def _sentence(item: dict, where: str, source_key: str | None, learner: str | None) -> Sentence:
     if isinstance(item, dict) and "cloze" in item:
         raise LessonFileError(f"{where}: 'cloze' is no longer stored; add gaps by hand in Anki")
     return Sentence(
@@ -118,6 +130,7 @@ def _sentence(item: dict, where: str, source_key: str | None) -> Sentence:
         text_pt=_str(item.get("pt")),
         tags=[str(t) for t in _as_list(item.get("tags"))],
         source_key=source_key,
+        learner=_learner(item, learner),
     )
 
 
@@ -151,19 +164,21 @@ def lesson_from_dict(raw) -> Lesson:
 
     if "date" in raw or "key" not in raw:  # lesson file
         lesson = Lesson(date=_date(raw.get("date")), title=_str(raw.get("title")),
-                        notes=_str(raw.get("notes")))
+                        notes=_str(raw.get("notes")), learner=_str(raw.get("learner")))
         for i, item in enumerate(_as_list(raw.get("sources")), start=1):
             source = _source(item, f"sources[{i}]")
             lesson.sources.append(source)
             for j, line in enumerate(_as_list(item.get("lines")), start=1):
-                lesson.sentences.append(_sentence(line, f"sources[{i}].lines[{j}]", source.key))
+                lesson.sentences.append(_sentence(line, f"sources[{i}].lines[{j}]", source.key,
+                                                   lesson.learner))
         for i, item in enumerate(_as_list(raw.get("sentences")), start=1):
-            lesson.sentences.append(_sentence(item, f"sentences[{i}]", None))
+            lesson.sentences.append(_sentence(item, f"sentences[{i}]", None, lesson.learner))
     else:  # source file
         source = _source(raw, "source")
-        lesson = Lesson(date=None, sources=[source], origin=source.key)
+        lesson = Lesson(date=None, sources=[source], origin=source.key,
+                        learner=_str(raw.get("learner")))
         for j, line in enumerate(_as_list(raw.get("lines")), start=1):
-            lesson.sentences.append(_sentence(line, f"lines[{j}]", source.key))
+            lesson.sentences.append(_sentence(line, f"lines[{j}]", source.key, lesson.learner))
 
     for i, item in enumerate(_as_list(raw.get("vocab")), start=1):
         where = f"vocab[{i}]"
@@ -177,13 +192,15 @@ def lesson_from_dict(raw) -> Lesson:
             gender=gender,
             example_it=_str(item.get("example")),
             source_key=_str(item.get("source")) or lesson.origin,
+            learner=_learner(item, lesson.learner),
         ))
 
     for i, item in enumerate(_as_list(raw.get("verbs")), start=1):
         where = f"verbs[{i}]"
         infinitive = _require(item, "infinitive", where)
         source_key = _str(item.get("source")) or lesson.origin  # optional source key
-        lesson.verbs.append(Verb(infinitive, _str(item.get("pt")), source_key))
+        learner = _learner(item, lesson.learner)
+        lesson.verbs.append(Verb(infinitive, _str(item.get("pt")), source_key, learner))
         conjugations = item.get("conjugations") or {}
         if not isinstance(conjugations, dict):
             raise LessonFileError(f"{where}: conjugations must map tense -> person -> form")
@@ -195,14 +212,15 @@ def lesson_from_dict(raw) -> Lesson:
                     raise LessonFileError(f"{where}.{tense}.{person}: empty form")
                 lesson.conjugations.append(
                     Conjugation(infinitive, str(tense).strip(), str(person).strip(), _str(form),
-                                source_key)
+                                source_key, learner)
                 )
 
     _check_unique([s.key for s in lesson.sources], "source key")
     _check_unique([s.text_it for s in lesson.sentences], "sentence")
     _check_unique([v.word_it for v in lesson.vocab], "vocab word")
-    # a verb may appear twice only with different sources
-    _check_unique([f"{v.infinitive} (source: {v.source_key})" for v in lesson.verbs], "verb")
+    # a verb may appear twice only with different sources or learners
+    _check_unique([f"{v.infinitive} (source: {v.source_key}, learner: {v.learner})"
+                   for v in lesson.verbs], "verb")
     _check_unique([f"{c.infinitive} · {c.tense} · {c.person}" for c in lesson.conjugations],
                   "conjugation")
     return lesson

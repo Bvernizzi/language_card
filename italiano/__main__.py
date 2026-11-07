@@ -1,19 +1,22 @@
 """CLI.
 
     python -m italiano load aulas/2026-11-06.yaml   # lesson or source files, or a folder
-    python -m italiano export [-o output/italiano.apkg]
+    python -m italiano export [-o output/italiano.apkg] [--learner NAME ...]
+        # one deck per learner (LEARNERS in .env, comma-separated):
+        # output/italiano_<name>.apkg = shared cards + that learner's cards
     python -m italiano dump                         # database -> aulas/*.yaml + aulas/fontes/*.yaml
     python -m italiano remove 2000-01-01            # delete a lesson (e.g. the example)
 """
 
 import argparse
 import datetime as dt
+import os
 import sys
 from pathlib import Path
 
 from .db import ROOT, connect, ensure_schema
 from .dump import dump_file, fetch_lesson, fetch_source, lesson_dates, source_keys
-from .exporter import export_package
+from .exporter import export_package, learners_in_db
 from .lesson_file import LessonFileError, parse_lesson
 from .loader import load_lesson, remove_lesson
 
@@ -41,13 +44,25 @@ def cmd_load(args) -> int:
     return 0
 
 
+def _configured_learners() -> list[str]:
+    return [n.strip() for n in os.environ.get("LEARNERS", "").split(",") if n.strip()]
+
+
 def cmd_export(args) -> int:
-    with connect() as conn:
+    with connect() as conn:  # connect() also reads .env (LEARNERS)
         ensure_schema(conn)
-        counts = export_package(conn, args.output)
-    for deck, n in sorted(counts.items()):
-        print(f"  {deck}: {n} notes")
-    print(f"wrote {args.output} ({sum(counts.values())} notes)")
+        learners = args.learner or _configured_learners()
+        unknown = learners_in_db(conn) - set(learners)
+        if learners and unknown:
+            print(f"warning: learner(s) {sorted(unknown)} in the database but not exported "
+                  f"(typo? add them to LEARNERS in .env)", file=sys.stderr)
+        jobs = ([(args.output.with_stem(f"{args.output.stem}_{name}"), name) for name in learners]
+                or [(args.output, None)])
+        for output, name in jobs:
+            counts = export_package(conn, output, name)
+            for deck, n in sorted(counts.items()):
+                print(f"  {deck}: {n} notes")
+            print(f"wrote {output} ({sum(counts.values())} notes)")
     return 0
 
 
@@ -78,8 +93,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("paths", nargs="+", help="YAML files or folders")
     p.set_defaults(func=cmd_load)
 
-    p = sub.add_parser("export", help="export all cards to an .apkg")
+    p = sub.add_parser("export", help="export cards to .apkg (one per learner if LEARNERS is set)")
     p.add_argument("-o", "--output", type=Path, default=ROOT / "output" / "italiano.apkg")
+    p.add_argument("--learner", action="append",
+                   help="export only for this learner (repeatable; default: LEARNERS in .env)")
     p.set_defaults(func=cmd_export)
 
     p = sub.add_parser("dump", help="rewrite aulas/*.yaml and aulas/fontes/*.yaml from the database")

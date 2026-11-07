@@ -5,7 +5,8 @@
 -- natural_key, from which Python derives a stable Anki GUID.
 --
 -- Cloze views share one shape:
---   card_type, natural_key, deck, prefix, text_it, extra, tags, first_seen
+--   card_type, natural_key, deck, prefix, text_it, extra, tags, first_seen, learners
+-- learners: NULL when any occurrence is shared (learner IS NULL), else who studies it.
 -- No gaps are generated: notes are exported as native Cloze notes with plain text
 -- (prefix + text_it) and the gaps are added by hand in Anki.
 
@@ -22,7 +23,9 @@ WITH occurrences AS (
                            ORDER BY l.lesson_date DESC NULLS LAST) AS rn,
         min(l.lesson_date) OVER w AS first_seen,
         coalesce(array_agg('aula::' || l.lesson_date) FILTER (WHERE l.lesson_id IS NOT NULL) OVER w,
-                 '{}') AS lesson_tags
+                 '{}') AS lesson_tags,
+        CASE WHEN bool_or(s.learner IS NULL) OVER w THEN NULL
+             ELSE array_agg(s.learner) OVER w END AS learners
     FROM sentence s
     JOIN source so     ON so.source_id = s.source_id
     LEFT JOIN lesson l ON l.lesson_id = s.lesson_id
@@ -39,7 +42,8 @@ SELECT
     text_it,
     coalesce(text_pt, '')      AS extra,
     tags || lesson_tags        AS tags,
-    first_seen
+    first_seen,
+    learners
 FROM occurrences
 WHERE rn = 1;
 
@@ -53,7 +57,9 @@ WITH occurrences AS (
         row_number() OVER (PARTITION BY s.text_it ORDER BY l.lesson_date DESC NULLS LAST) AS rn,
         min(l.lesson_date) OVER w AS first_seen,
         coalesce(array_agg('aula::' || l.lesson_date) FILTER (WHERE l.lesson_id IS NOT NULL) OVER w,
-                 '{}') AS lesson_tags
+                 '{}') AS lesson_tags,
+        CASE WHEN bool_or(s.learner IS NULL) OVER w THEN NULL
+             ELSE array_agg(s.learner) OVER w END AS learners
     FROM sentence s
     LEFT JOIN source so ON so.source_id = s.source_id
     LEFT JOIN lesson l  ON l.lesson_id = s.lesson_id
@@ -69,7 +75,8 @@ SELECT
     concat_ws('<br>', text_pt,
         CASE WHEN url IS NOT NULL THEN format('<a href="%s">%s</a>', url, title) END) AS extra,
     tags || lesson_tags       AS tags,
-    first_seen
+    first_seen,
+    learners
 FROM occurrences
 WHERE rn = 1;
 
@@ -84,7 +91,9 @@ WITH occurrences AS (
                            ORDER BY l.lesson_date DESC NULLS LAST) AS rn,
         min(l.lesson_date) OVER w AS first_seen,
         coalesce(array_agg('aula::' || l.lesson_date) FILTER (WHERE l.lesson_id IS NOT NULL) OVER w,
-                 '{}') AS lesson_tags
+                 '{}') AS lesson_tags,
+        CASE WHEN bool_or(c.learner IS NULL) OVER w THEN NULL
+             ELSE array_agg(c.learner) OVER w END AS learners
     FROM conjugation c
     JOIN verb v         ON v.verb_id = c.verb_id
     LEFT JOIN lesson l  ON l.lesson_id = c.lesson_id
@@ -107,7 +116,8 @@ SELECT
                 source_author) || '</small>'
         END) AS extra,
     ARRAY['verbo::' || infinitive] || lesson_tags AS tags,
-    first_seen
+    first_seen,
+    learners
 FROM occurrences
 WHERE rn = 1;
 
@@ -120,7 +130,9 @@ WITH occurrences AS (
         row_number() OVER (PARTITION BY v.word_it ORDER BY l.lesson_date DESC NULLS LAST) AS rn,
         min(l.lesson_date) OVER w AS first_seen,
         coalesce(array_agg('aula::' || l.lesson_date) FILTER (WHERE l.lesson_id IS NOT NULL) OVER w,
-                 '{}') AS lesson_tags
+                 '{}') AS lesson_tags,
+        CASE WHEN bool_or(v.learner IS NULL) OVER w THEN NULL
+             ELSE array_agg(v.learner) OVER w END AS learners
     FROM vocab v
     LEFT JOIN lesson l  ON l.lesson_id = v.lesson_id
     LEFT JOIN source so ON so.source_id = v.source_id
@@ -143,6 +155,7 @@ SELECT
                 source_author)
         END) AS info,
     lesson_tags                    AS tags,
-    first_seen
+    first_seen,
+    learners
 FROM occurrences
 WHERE rn = 1;

@@ -37,7 +37,22 @@ def _tags(tags: list[str] | None) -> list[str]:
     return sorted({t.strip().replace(" ", "_") for t in tags or [] if t and t.strip()})
 
 
-def build_decks(conn: psycopg.Connection) -> tuple[list[genanki.Deck], Counter]:
+# NULL learners = shared card; otherwise only the listed learners get it.
+_FOR_LEARNER = "WHERE %(learner)s::text IS NULL OR learners IS NULL OR %(learner)s = ANY(learners)"
+
+
+def learners_in_db(conn: psycopg.Connection) -> set[str]:
+    return {r[0] for r in conn.execute(
+        """SELECT learner FROM sentence WHERE learner IS NOT NULL
+           UNION SELECT learner FROM vocab WHERE learner IS NOT NULL
+           UNION SELECT learner FROM conjugation WHERE learner IS NOT NULL"""
+    )}
+
+
+def build_decks(conn: psycopg.Connection,
+                learner: str | None = None) -> tuple[list[genanki.Deck], Counter]:
+    """All cards, or (with `learner`) the shared cards plus that learner's own."""
+    params = {"learner": learner}
     decks = {name: genanki.Deck(deck_id, name) for name, deck_id in DECK_IDS.items()}
     counts: Counter = Counter()
     guids: set[str] = set()
@@ -52,7 +67,8 @@ def build_decks(conn: psycopg.Connection) -> tuple[list[genanki.Deck], Counter]:
     for view in CLOZE_VIEWS:
         rows = conn.execute(
             f"""SELECT card_type, natural_key, deck, prefix, text_it, extra, tags
-                FROM {view} ORDER BY first_seen, natural_key"""
+                FROM {view} {_FOR_LEARNER} ORDER BY first_seen, natural_key""",
+            params,
         ).fetchall()
         for card_type, key, deck, prefix, text_it, extra, tags in rows:
             note = genanki.Note(
@@ -68,7 +84,8 @@ def build_decks(conn: psycopg.Connection) -> tuple[list[genanki.Deck], Counter]:
 
     rows = conn.execute(
         """SELECT card_type, natural_key, deck, word_it, word_pt, info, tags
-           FROM v_card_vocab ORDER BY first_seen, natural_key"""
+           FROM v_card_vocab """ + _FOR_LEARNER + """ ORDER BY first_seen, natural_key""",
+        params,
     ).fetchall()
     for card_type, key, deck, word_it, word_pt, info, tags in rows:
         add(deck, genanki.Note(
@@ -81,8 +98,9 @@ def build_decks(conn: psycopg.Connection) -> tuple[list[genanki.Deck], Counter]:
     return [d for d in decks.values() if d.notes], counts
 
 
-def export_package(conn: psycopg.Connection, output: Path) -> Counter:
-    decks, counts = build_decks(conn)
+def export_package(conn: psycopg.Connection, output: Path,
+                   learner: str | None = None) -> Counter:
+    decks, counts = build_decks(conn, learner)
     if not decks:
         raise RuntimeError("no cards to export: load a lesson first")
     output.parent.mkdir(parents=True, exist_ok=True)

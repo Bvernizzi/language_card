@@ -1,3 +1,4 @@
+import datetime as dt
 from pathlib import Path
 
 import yaml
@@ -48,3 +49,29 @@ def test_source_file_parses_and_round_trips():
 def test_source_without_lines_is_kept():
     raw = {"date": "2026-11-07", "sources": [{"key": "s", "kind": "song", "title": "T"}]}
     assert lesson_to_dict(lesson_from_dict(raw))["sources"] == [{"key": "s", "kind": "song", "title": "T"}]
+
+
+def test_learners_round_trip():
+    raw = {
+        "date": dt.date(2026, 11, 7),
+        "sentences": [{"it": "Ciao", "learner": "alice"}, {"it": "Buongiorno"}],
+        "vocab": [{"it": "finestra", "pt": "janela", "learner": "bob"}],
+        "verbs": [
+            {"infinitive": "bere", "conjugations": {"presente": {"io": "bevo"}}},
+            {"infinitive": "bere", "learner": "alice", "conjugations": {"presente": {"tu": "bevi"}}},
+        ],
+    }
+    lesson = lesson_from_dict(raw)
+    assert lesson_to_dict(lesson) == raw
+    assert lesson_from_dict(lesson_to_dict(lesson)) == lesson
+
+
+def test_source_file_of_one_learner_writes_it_once():
+    raw = {"key": "s", "kind": "text", "title": "T", "learner": "alice",
+           "vocab": [{"it": "finestra", "pt": "janela"}]}
+    lesson = lesson_from_dict(raw)
+    assert lesson.vocab[0].learner == "alice"
+    lesson.learner = None  # as fetched from the DB: the file default is recomputed on dump
+    from italiano.dump import _common_learner
+    lesson.learner = _common_learner(lesson)
+    assert lesson_to_dict(lesson) == raw

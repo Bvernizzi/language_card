@@ -68,3 +68,12 @@ CREATE TABLE IF NOT EXISTS conjugation (
     CONSTRAINT conjugation_origin_key
         UNIQUE NULLS NOT DISTINCT (lesson_id, source_id, verb_id, tense, person)
 );
+
+-- Who studies each row: NULL = everyone (shared), otherwise one learner's name.
+-- Each learner gets their own deck with the shared rows plus their own rows.
+ALTER TABLE sentence    ADD COLUMN IF NOT EXISTS learner text CHECK (learner <> '');
+ALTER TABLE vocab       ADD COLUMN IF NOT EXISTS learner text CHECK (learner <> '');
+ALTER TABLE conjugation ADD COLUMN IF NOT EXISTS learner text CHECK (learner <> '');
+COMMENT ON COLUMN sentence.learner    IS 'NULL = todos; senão o nome de quem estuda (ex.: alice)';
+COMMENT ON COLUMN vocab.learner       IS 'NULL = todos; senão o nome de quem estuda (ex.: alice)';
+COMMENT ON COLUMN conjugation.learner IS 'NULL = todos; senão o nome de quem estuda (ex.: alice)';

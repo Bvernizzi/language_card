@@ -55,12 +55,12 @@ def load_lesson(conn: psycopg.Connection, lesson: Lesson) -> dict[str, int]:
         for st in lesson.sentences:
             conn.execute(
                 """
-                INSERT INTO sentence (lesson_id, source_id, text_it, text_pt, tags)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO sentence (lesson_id, source_id, text_it, text_pt, tags, learner)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 ON CONFLICT ON CONSTRAINT sentence_origin_key DO UPDATE
-                   SET text_pt = EXCLUDED.text_pt, tags = EXCLUDED.tags
+                   SET text_pt = EXCLUDED.text_pt, tags = EXCLUDED.tags, learner = EXCLUDED.learner
                 """,
-                (lesson_id, sid(st.source_key), st.text_it, st.text_pt, st.tags),
+                (lesson_id, sid(st.source_key), st.text_it, st.text_pt, st.tags, st.learner),
             )
         conn.execute(
             f"""DELETE FROM sentence t WHERE {scope}
@@ -73,14 +73,15 @@ def load_lesson(conn: psycopg.Connection, lesson: Lesson) -> dict[str, int]:
             conn.execute(
                 """
                 INSERT INTO vocab (lesson_id, source_id, word_it, word_pt, part_of_speech, gender,
-                                   example_it)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                   example_it, learner)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT ON CONSTRAINT vocab_origin_key DO UPDATE
                    SET word_pt = EXCLUDED.word_pt, part_of_speech = EXCLUDED.part_of_speech,
-                       gender = EXCLUDED.gender, example_it = EXCLUDED.example_it
+                       gender = EXCLUDED.gender, example_it = EXCLUDED.example_it,
+                       learner = EXCLUDED.learner
                 """,
                 (lesson_id, sid(v.source_key), v.word_it, v.word_pt, v.part_of_speech, v.gender,
-                 v.example_it),
+                 v.example_it, v.learner),
             )
         conn.execute(
             f"""DELETE FROM vocab t WHERE {scope}
@@ -103,11 +104,13 @@ def load_lesson(conn: psycopg.Connection, lesson: Lesson) -> dict[str, int]:
         for c in lesson.conjugations:
             conn.execute(
                 """
-                INSERT INTO conjugation (lesson_id, source_id, verb_id, tense, person, form)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT ON CONSTRAINT conjugation_origin_key DO UPDATE SET form = EXCLUDED.form
+                INSERT INTO conjugation (lesson_id, source_id, verb_id, tense, person, form, learner)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT ON CONSTRAINT conjugation_origin_key DO UPDATE
+                   SET form = EXCLUDED.form, learner = EXCLUDED.learner
                 """,
-                (lesson_id, sid(c.source_key), verb_ids[c.infinitive], c.tense, c.person, c.form),
+                (lesson_id, sid(c.source_key), verb_ids[c.infinitive], c.tense, c.person, c.form,
+                 c.learner),
             )
         conn.execute(
             f"""DELETE FROM conjugation t USING verb v

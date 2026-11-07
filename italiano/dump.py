@@ -30,38 +30,47 @@ def _fill(conn: psycopg.Connection, lesson: Lesson, scope: str, params: tuple) -
             seen.add(row[0])
             lesson.sources.append(Source(*row))
 
-    for *src, text_it, text_pt, tags in conn.execute(
+    for *src, text_it, text_pt, tags, learner in conn.execute(
         f"""SELECT so.source_key, so.kind, so.title, so.author, so.url,
-                   t.text_it, t.text_pt, t.tags
+                   t.text_it, t.text_pt, t.tags, t.learner
               FROM sentence t LEFT JOIN source so ON so.source_id = t.source_id
              WHERE {scope} ORDER BY t.sentence_id""",
         params,
     ):
         add_source(src)
-        lesson.sentences.append(Sentence(text_it, text_pt, list(tags), src[0]))
+        lesson.sentences.append(Sentence(text_it, text_pt, list(tags), src[0], learner))
 
-    for *src, word_it, word_pt, pos, gender, example in conn.execute(
+    for *src, word_it, word_pt, pos, gender, example, learner in conn.execute(
         f"""SELECT so.source_key, so.kind, so.title, so.author, so.url,
-                   t.word_it, t.word_pt, t.part_of_speech, t.gender, t.example_it
+                   t.word_it, t.word_pt, t.part_of_speech, t.gender, t.example_it, t.learner
               FROM vocab t LEFT JOIN source so ON so.source_id = t.source_id
              WHERE {scope} ORDER BY t.vocab_id""",
         params,
     ):
         add_source(src)
-        lesson.vocab.append(Vocab(word_it, word_pt, pos, gender, example, src[0]))
+        lesson.vocab.append(Vocab(word_it, word_pt, pos, gender, example, src[0], learner))
 
-    for *src, infinitive, translation, tense, person, form in conn.execute(
+    for *src, infinitive, translation, tense, person, form, learner in conn.execute(
         f"""SELECT so.source_key, so.kind, so.title, so.author, so.url,
-                   v.infinitive, v.translation, t.tense, t.person, t.form
+                   v.infinitive, v.translation, t.tense, t.person, t.form, t.learner
               FROM conjugation t JOIN verb v ON v.verb_id = t.verb_id
               LEFT JOIN source so ON so.source_id = t.source_id
              WHERE {scope} ORDER BY t.conjugation_id""",
         params,
     ):
         add_source(src)
-        if (infinitive, src[0]) not in {(v.infinitive, v.source_key) for v in lesson.verbs}:
-            lesson.verbs.append(Verb(infinitive, translation, src[0]))
-        lesson.conjugations.append(Conjugation(infinitive, tense, person, form, src[0]))
+        if (infinitive, src[0], learner) not in {
+                (v.infinitive, v.source_key, v.learner) for v in lesson.verbs}:
+            lesson.verbs.append(Verb(infinitive, translation, src[0], learner))
+        lesson.conjugations.append(Conjugation(infinitive, tense, person, form, src[0], learner))
+    lesson.learner = _common_learner(lesson)
+
+
+def _common_learner(lesson: Lesson) -> str | None:
+    """If every row belongs to the same learner, write it once at the top of the file."""
+    rows = lesson.sentences + lesson.vocab + lesson.verbs
+    learners = {r.learner for r in rows}
+    return learners.pop() if rows and len(learners) == 1 else None
 
 
 def fetch_lesson(conn: psycopg.Connection, date: dt.date) -> Lesson | None:
@@ -87,12 +96,14 @@ def fetch_source(conn: psycopg.Connection, key: str) -> Lesson | None:
     return lesson
 
 
-def _sentence_dict(s: Sentence) -> dict:
+def _sentence_dict(s: Sentence, default: str | None) -> dict:
     d = {"it": s.text_it}
     if s.text_pt:
         d["pt"] = s.text_pt
     if s.tags:
         d["tags"] = s.tags
+    if s.learner != default:
+        d["learner"] = s.learner
     return d
 
 
@@ -106,37 +117,51 @@ def lesson_to_dict(lesson: Lesson) -> dict:
     def own(source_key):  # in a source file, its own key is implicit
         return None if source_key == lesson.origin else source_key
 
-    vocab = [_compact({"it": v.word_it, "pt": v.word_pt, "pos": v.part_of_speech,
-                       "gender": v.gender, "example": v.example_it,
-                       "source": own(v.source_key)}) for v in lesson.vocab]
+    def who(row, d: dict) -> dict:  # learner only when it differs from the file default
+        if row.learner != lesson.learner:
+            d["learner"] = row.learner  # None (shared) is kept on purpose
+        return d
+
+    def line(s):
+        return _sentence_dict(s, lesson.learner)
+
+    vocab = [who(v, _compact({"it": v.word_it, "pt": v.word_pt, "pos": v.part_of_speech,
+                              "gender": v.gender, "example": v.example_it,
+                              "source": own(v.source_key)})) for v in lesson.vocab]
     verbs = []
     for v in lesson.verbs:
         conjugations: dict = {}
         for c in lesson.conjugations:
-            if (c.infinitive, c.source_key) == (v.infinitive, v.source_key):
+            if (c.infinitive, c.source_key, c.learner) == (v.infinitive, v.source_key, v.learner):
                 conjugations.setdefault(c.tense, {})[c.person] = c.form
-        verbs.append(_compact({"infinitive": v.infinitive, "pt": v.translation,
-                               "source": own(v.source_key), "conjugations": conjugations}))
+        d = _compact({"infinitive": v.infinitive, "pt": v.translation,
+                      "source": own(v.source_key)})
+        d = who(v, d)
+        if conjugations:
+            d["conjugations"] = conjugations
+        verbs.append(d)
 
     if lesson.origin is not None:  # source file
         so = lesson.sources[0]
         return _compact({
             "key": so.key, "kind": so.kind, "title": so.title, "author": so.author, "url": so.url,
-            "lines": [_sentence_dict(s) for s in lesson.sentences],
+            "learner": lesson.learner,
+            "lines": [line(s) for s in lesson.sentences],
             "vocab": vocab,
             "verbs": verbs,
         })
 
     sources = [_compact({
         "key": so.key, "kind": so.kind, "title": so.title, "author": so.author, "url": so.url,
-        "lines": [_sentence_dict(s) for s in lesson.sentences if s.source_key == so.key],
+        "lines": [line(s) for s in lesson.sentences if s.source_key == so.key],
     }) for so in lesson.sources]
     return _compact({
         "date": lesson.date,
         "title": lesson.title,
         "notes": lesson.notes,
+        "learner": lesson.learner,
         "sources": sources,
-        "sentences": [_sentence_dict(s) for s in lesson.sentences if s.source_key is None],
+        "sentences": [line(s) for s in lesson.sentences if s.source_key is None],
         "vocab": vocab,
         "verbs": verbs,
     })
