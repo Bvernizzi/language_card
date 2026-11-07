@@ -1,0 +1,64 @@
+# Fictional example lesson. All content here is invented.
+# Copy this file to aulas/YYYY-MM-DD.yaml for a real lesson.
+# Only `date` is required; every list is optional.
+
+date: 2000-01-01
+title: Lezione di esempio
+notes: Saluti, presente di essere, una canzone inventata.
+
+sources:
+  - key: canzone-del-caffe          # stable id, reuse it if the song comes back in a later lesson
+    kind: song                      # song | text | video | exercise
+    title: Canzone del caffè
+    author: I Finti
+    url: https://example.com/canzone-del-caffe
+    lines:                          # short excerpts only; gaps are added by hand in Anki
+      - it: Ogni mattina bevo un caffè al bar
+        pt: Toda manhã eu bebo um café no bar
+      - it: E il sole entra dalla finestra
+        pt: E o sol entra pela janela
+
+  - key: dialogo-al-bar
+    kind: text
+    title: Dialogo al bar
+    lines:
+      - it: Vorrei un cornetto, per favore.
+        pt: Eu queria um croissant, por favor.
+
+sentences:
+  - it: Mi chiamo Giulia e sono brasiliana.
+    pt: Meu nome é Giulia e sou brasileira.
+    tags: [presentarsi]
+  - it: Di dove sei?
+    pt: De onde você é?
+  - it: Piacere!
+    pt: Prazer!
+
+vocab:
+  - it: finestra
+    pt: janela
+    pos: noun
+    gender: f                       # m | f | m/f
+    example: Apri la finestra, per favore.
+    source: canzone-del-caffe       # optional: where the word was seen (a source key)
+  - it: bere
+    pt: beber
+    pos: verb
+  - it: sempre
+    pt: sempre
+    pos: adverb
+
+verbs:
+  - infinitive: essere
+    pt: ser / estar
+    conjugations:
+      presente:
+        io: sono
+        tu: sei
+        noi: siamo
+  - infinitive: andare
+    pt: ir
+    source: canzone-del-caffe       # optional: where these forms were seen (a source key)
+    conjugations:
+      passato prossimo:
+        noi: siamo andati
