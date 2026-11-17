@@ -136,6 +136,7 @@ kind: song
 title: Song title
 author: Artist
 url: https://...
+notes: grammar points studied with it   # optional
 lines:
   - {it: a line of the song, pt: its translation}
 vocab:

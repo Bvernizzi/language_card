@@ -31,7 +31,7 @@ def _fill(conn: psycopg.Connection, lesson: Lesson, scope: str, params: tuple) -
             lesson.sources.append(Source(*row))
 
     for *src, text_it, text_pt, tags, learner in conn.execute(
-        f"""SELECT so.source_key, so.kind, so.title, so.author, so.url,
+        f"""SELECT so.source_key, so.kind, so.title, so.author, so.url, so.notes,
                    t.text_it, t.text_pt, t.tags, t.learner
               FROM sentence t LEFT JOIN source so ON so.source_id = t.source_id
              WHERE {scope} ORDER BY t.sentence_id""",
@@ -41,7 +41,7 @@ def _fill(conn: psycopg.Connection, lesson: Lesson, scope: str, params: tuple) -
         lesson.sentences.append(Sentence(text_it, text_pt, list(tags), src[0], learner))
 
     for *src, word_it, word_pt, pos, gender, example, learner in conn.execute(
-        f"""SELECT so.source_key, so.kind, so.title, so.author, so.url,
+        f"""SELECT so.source_key, so.kind, so.title, so.author, so.url, so.notes,
                    t.word_it, t.word_pt, t.part_of_speech, t.gender, t.example_it, t.learner
               FROM vocab t LEFT JOIN source so ON so.source_id = t.source_id
              WHERE {scope} ORDER BY t.vocab_id""",
@@ -51,7 +51,7 @@ def _fill(conn: psycopg.Connection, lesson: Lesson, scope: str, params: tuple) -
         lesson.vocab.append(Vocab(word_it, word_pt, pos, gender, example, src[0], learner))
 
     for *src, infinitive, translation, tense, person, form, learner in conn.execute(
-        f"""SELECT so.source_key, so.kind, so.title, so.author, so.url,
+        f"""SELECT so.source_key, so.kind, so.title, so.author, so.url, so.notes,
                    v.infinitive, v.translation, t.tense, t.person, t.form, t.learner
               FROM conjugation t JOIN verb v ON v.verb_id = t.verb_id
               LEFT JOIN source so ON so.source_id = t.source_id
@@ -75,18 +75,19 @@ def _common_learner(lesson: Lesson) -> str | None:
 
 def fetch_lesson(conn: psycopg.Connection, date: dt.date) -> Lesson | None:
     row = conn.execute(
-        "SELECT lesson_id, title, notes FROM lesson WHERE lesson_date = %s", (date,)
+        "SELECT lesson_id, title, notes, payment FROM lesson WHERE lesson_date = %s", (date,)
     ).fetchone()
     if row is None:
         return None
-    lesson = Lesson(date=date, title=row[1], notes=row[2])
+    lesson = Lesson(date=date, title=row[1], notes=row[2], payment=row[3])
     _fill(conn, lesson, "t.lesson_id = %s", (row[0],))
     return lesson
 
 
 def fetch_source(conn: psycopg.Connection, key: str) -> Lesson | None:
     row = conn.execute(
-        "SELECT source_id, source_key, kind, title, author, url FROM source WHERE source_key = %s",
+        "SELECT source_id, source_key, kind, title, author, url, notes FROM source"
+        " WHERE source_key = %s",
         (key,),
     ).fetchone()
     if row is None:
@@ -145,6 +146,7 @@ def lesson_to_dict(lesson: Lesson) -> dict:
         so = lesson.sources[0]
         return _compact({
             "key": so.key, "kind": so.kind, "title": so.title, "author": so.author, "url": so.url,
+            "notes": so.notes,
             "learner": lesson.learner,
             "lines": [line(s) for s in lesson.sentences],
             "vocab": vocab,
@@ -153,12 +155,14 @@ def lesson_to_dict(lesson: Lesson) -> dict:
 
     sources = [_compact({
         "key": so.key, "kind": so.kind, "title": so.title, "author": so.author, "url": so.url,
+        "notes": so.notes,
         "lines": [line(s) for s in lesson.sentences if s.source_key == so.key],
     }) for so in lesson.sources]
     return _compact({
         "date": lesson.date,
         "title": lesson.title,
         "notes": lesson.notes,
+        "payment": lesson.payment,
         "learner": lesson.learner,
         "sources": sources,
         "sentences": [line(s) for s in lesson.sentences if s.source_key is None],

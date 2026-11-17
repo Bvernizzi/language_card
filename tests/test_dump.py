@@ -75,3 +75,10 @@ def test_source_file_of_one_learner_writes_it_once():
     from italiano.dump import _common_learner
     lesson.learner = _common_learner(lesson)
     assert lesson_to_dict(lesson) == raw
+
+
+def test_source_notes_round_trip():
+    raw = {"key": "s", "kind": "song", "title": "T", "notes": "grammar points"}
+    lesson = lesson_from_dict(raw)
+    assert lesson.sources[0].notes == "grammar points"
+    assert lesson_to_dict(lesson) == raw

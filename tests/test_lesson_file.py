@@ -53,3 +53,9 @@ def test_learner_file_default_and_row_override():
     assert [s.learner for s in lesson.sentences] == ["alice", None]
     assert lesson.vocab[0].learner == "bob"
     assert lesson.conjugations[0].learner == "alice"
+
+
+def test_payment_is_validated():
+    assert lesson_from_dict({"date": "2026-11-13", "payment": "paid"}).payment == "paid"
+    with pytest.raises(LessonFileError, match="payment"):
+        lesson_from_dict({"date": "2026-11-13", "payment": "maybe"})

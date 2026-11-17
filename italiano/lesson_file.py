@@ -9,6 +9,7 @@ import yaml
 
 SOURCE_KINDS = {"song", "text", "video", "exercise"}
 GENDERS = {"m", "f", "m/f"}
+PAYMENTS = {"free", "paid", "pending"}
 
 
 class LessonFileError(ValueError):
@@ -22,6 +23,7 @@ class Source:
     title: str
     author: str | None = None
     url: str | None = None
+    notes: str | None = None
 
 
 @dataclass
@@ -80,6 +82,7 @@ class Lesson:
     conjugations: list[Conjugation] = field(default_factory=list)
     origin: str | None = None
     learner: str | None = None  # file default; each row keeps its own value
+    payment: str | None = None  # free | paid | pending (lesson files only)
 
     @property
     def label(self) -> str:
@@ -144,6 +147,7 @@ def _source(item: dict, where: str) -> Source:
         title=_require(item, "title", where),
         author=_str(item.get("author")),
         url=_str(item.get("url")),
+        notes=_str(item.get("notes")),
     )
 
 
@@ -163,8 +167,12 @@ def lesson_from_dict(raw) -> Lesson:
         raise LessonFileError("the file must be a YAML mapping")
 
     if "date" in raw or "key" not in raw:  # lesson file
+        payment = _str(raw.get("payment"))
+        if payment is not None and payment not in PAYMENTS:
+            raise LessonFileError(f"payment must be one of {sorted(PAYMENTS)}")
         lesson = Lesson(date=_date(raw.get("date")), title=_str(raw.get("title")),
-                        notes=_str(raw.get("notes")), learner=_str(raw.get("learner")))
+                        notes=_str(raw.get("notes")), learner=_str(raw.get("learner")),
+                        payment=payment)
         for i, item in enumerate(_as_list(raw.get("sources")), start=1):
             source = _source(item, f"sources[{i}]")
             lesson.sources.append(source)

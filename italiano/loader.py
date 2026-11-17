@@ -19,25 +19,27 @@ def load_lesson(conn: psycopg.Connection, lesson: Lesson) -> dict[str, int]:
         for s in lesson.sources:
             source_ids[s.key] = conn.execute(
                 """
-                INSERT INTO source (source_key, kind, title, author, url)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO source (source_key, kind, title, author, url, notes)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 ON CONFLICT (source_key) DO UPDATE
                    SET kind = EXCLUDED.kind, title = EXCLUDED.title,
-                       author = EXCLUDED.author, url = EXCLUDED.url
+                       author = EXCLUDED.author, url = EXCLUDED.url,
+                       notes = EXCLUDED.notes
                 RETURNING source_id
                 """,
-                (s.key, s.kind, s.title, s.author, s.url),
+                (s.key, s.kind, s.title, s.author, s.url, s.notes),
             ).fetchone()[0]
 
         if lesson.origin is None:
             lesson_id = conn.execute(
                 """
-                INSERT INTO lesson (lesson_date, title, notes) VALUES (%s, %s, %s)
+                INSERT INTO lesson (lesson_date, title, notes, payment) VALUES (%s, %s, %s, %s)
                 ON CONFLICT (lesson_date) DO UPDATE
-                   SET title = EXCLUDED.title, notes = EXCLUDED.notes, updated_at = now()
+                   SET title = EXCLUDED.title, notes = EXCLUDED.notes,
+                       payment = EXCLUDED.payment, updated_at = now()
                 RETURNING lesson_id
                 """,
-                (lesson.date, lesson.title, lesson.notes),
+                (lesson.date, lesson.title, lesson.notes, lesson.payment),
             ).fetchone()[0]
             scope, scope_params = "t.lesson_id = %s", (lesson_id,)
         else:

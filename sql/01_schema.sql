@@ -77,3 +77,10 @@ ALTER TABLE conjugation ADD COLUMN IF NOT EXISTS learner text CHECK (learner <> 
 COMMENT ON COLUMN sentence.learner    IS 'NULL = todos; senão o nome de quem estuda (ex.: alice)';
 COMMENT ON COLUMN vocab.learner       IS 'NULL = todos; senão o nome de quem estuda (ex.: alice)';
 COMMENT ON COLUMN conjugation.learner IS 'NULL = todos; senão o nome de quem estuda (ex.: alice)';
+
+-- Free notes about a source (e.g. grammar points studied with a song).
+ALTER TABLE source ADD COLUMN IF NOT EXISTS notes text;
+
+-- Lesson payment status (a lesson can be registered ahead of time, already paid).
+ALTER TABLE lesson ADD COLUMN IF NOT EXISTS payment text
+    CHECK (payment IN ('free', 'paid', 'pending'));
